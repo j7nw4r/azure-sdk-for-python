@@ -644,41 +644,44 @@ class TestServiceBusClientAsync(AzureMgmtRecordedTestCase):
     @pytest.mark.asyncio
     @pytest.mark.parametrize("uamqp_transport", uamqp_transport_params, ids=uamqp_transport_ids)
     async def test_backoff_fixed_retry(self, uamqp_transport):
+        # Fixed mode sleeps `backoff_factor` (0.8s) regardless of retried_times;
+        # exponential mode would sleep `backoff_factor * (2**retried_times)`. Pick
+        # retried_times=3 so the exponential ceiling is 6.4s, giving ~5.6s of
+        # headroom over the actual 0.8s sleep to absorb CI scheduler jitter on
+        # slower hosted runners (notably macos311).
+        retried_times = 3
         client = ServiceBusClient("fake.host.com", "fake_eh", retry_mode="fixed", uamqp_transport=uamqp_transport)
         # queue sender
         sender = client.get_queue_sender("fake_name")
         backoff = client._config.retry_backoff_factor
         start_time = time.time()
-        await sender._backoff(retried_times=1, last_exception=Exception("fake"), abs_timeout_time=None)
+        await sender._backoff(retried_times=retried_times, last_exception=Exception("fake"), abs_timeout_time=None)
         sleep_time_fixed = time.time() - start_time
-        # exp = 0.8 * (2 ** 1) = 1.6
-        # time.sleep() in _backoff will take AT LEAST time 'exp' for retry_mode='exponential'
-        # check that fixed is less than 'exp'
-        assert sleep_time_fixed < backoff * (2**1)
+        assert sleep_time_fixed < backoff * (2**retried_times)
 
         # topic sender
         sender = client.get_topic_sender("fake_name")
         backoff = client._config.retry_backoff_factor
         start_time = time.time()
-        await sender._backoff(retried_times=1, last_exception=Exception("fake"), abs_timeout_time=None)
+        await sender._backoff(retried_times=retried_times, last_exception=Exception("fake"), abs_timeout_time=None)
         sleep_time_fixed = time.time() - start_time
-        assert sleep_time_fixed < backoff * (2**1)
+        assert sleep_time_fixed < backoff * (2**retried_times)
 
         # queue receiver
         receiver = client.get_queue_receiver("fake_name")
         backoff = client._config.retry_backoff_factor
         start_time = time.time()
-        await receiver._backoff(retried_times=1, last_exception=Exception("fake"), abs_timeout_time=None)
+        await receiver._backoff(retried_times=retried_times, last_exception=Exception("fake"), abs_timeout_time=None)
         sleep_time_fixed = time.time() - start_time
-        assert sleep_time_fixed < backoff * (2**1)
+        assert sleep_time_fixed < backoff * (2**retried_times)
 
         # subscription receiver
         receiver = client.get_subscription_receiver("fake_topic", "fake_sub")
         backoff = client._config.retry_backoff_factor
         start_time = time.time()
-        await receiver._backoff(retried_times=1, last_exception=Exception("fake"), abs_timeout_time=None)
+        await receiver._backoff(retried_times=retried_times, last_exception=Exception("fake"), abs_timeout_time=None)
         sleep_time_fixed = time.time() - start_time
-        assert sleep_time_fixed < backoff * (2**1)
+        assert sleep_time_fixed < backoff * (2**retried_times)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("uamqp_transport", uamqp_transport_params, ids=uamqp_transport_ids)
